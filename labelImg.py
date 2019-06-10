@@ -44,6 +44,8 @@ from libs.yolo_io import YoloReader
 from libs.yolo_io import TXT_EXT
 from libs.ustr import ustr
 from libs.hashableQListWidgetItem import HashableQListWidgetItem
+from libs.json_io import JsonReader
+from libs.json_io import JSON_EXT 
 
 __appname__ = 'labelImg'
 
@@ -492,6 +494,7 @@ class MainWindow(QMainWindow, WindowMixin):
             self.actions.save_format.setIcon(newIcon("format_voc"))
             self.usingPascalVocFormat = True
             self.usingYoloFormat = False
+            self.usingJsonFormat = False
             LabelFile.suffix = XML_EXT
 
         elif save_format == FORMAT_YOLO:
@@ -499,11 +502,21 @@ class MainWindow(QMainWindow, WindowMixin):
             self.actions.save_format.setIcon(newIcon("format_yolo"))
             self.usingPascalVocFormat = False
             self.usingYoloFormat = True
+            self.usingJsonFormat = False
             LabelFile.suffix = TXT_EXT
+
+        elif save_format == FORMAT_JSON:
+            self.actions.save_format.setText(FORMAT_JSON)
+            self.actions.save_format.setIcon(newIcon("format_json"))
+            self.usingPascalVocFormat = False
+            self.usingYoloFormat = False
+            self.usingJsonFormat = True
+            LabelFile.suffix = JSON_EXT
 
     def change_format(self):
         if self.usingPascalVocFormat: self.set_format(FORMAT_YOLO)
-        elif self.usingYoloFormat: self.set_format(FORMAT_PASCALVOC)
+        elif self.usingYoloFormat: self.set_format(FORMAT_JSON)
+        elif self.usingJsonFormat: self.set_format(FORMAT_PASCALVOC)
 
     def noShapes(self):
         return not self.itemsToShapes
@@ -800,6 +813,11 @@ class MainWindow(QMainWindow, WindowMixin):
                     annotationFilePath += TXT_EXT
                 self.labelFile.saveYoloFormat(annotationFilePath, shapes, self.filePath, self.imageData, self.labelHist,
                                                    self.lineColor.getRgb(), self.fillColor.getRgb())
+            elif self.usingJsonFormat is True:
+                if annotationFilePath[-5:].lower() != ".json":
+                    annotationFilePath += JSON_EXT
+                self.labelFile.saveJsonFormat(annotationFilePath, shapes, self.filePath, self.imageData, self.labelHist,
+                                                   self.lineColor.getRgb(), self.fillColor.getRgb())            
             else:
                 self.labelFile.save(annotationFilePath, shapes, self.filePath, self.imageData,
                                     self.lineColor.getRgb(), self.fillColor.getRgb())
@@ -1027,6 +1045,7 @@ class MainWindow(QMainWindow, WindowMixin):
                     os.path.splitext(self.filePath)[0])
                 xmlPath = os.path.join(self.defaultSaveDir, basename + XML_EXT)
                 txtPath = os.path.join(self.defaultSaveDir, basename + TXT_EXT)
+                jsonPath = os.path.join(self.defaultSaveDir, basename + JSON_EXT)
 
                 """Annotation file priority:
                 PascalXML > YOLO
@@ -1035,13 +1054,19 @@ class MainWindow(QMainWindow, WindowMixin):
                     self.loadPascalXMLByFilename(xmlPath)
                 elif os.path.isfile(txtPath):
                     self.loadYOLOTXTByFilename(txtPath)
+                elif os.path.isfile(jsonPath):
+                    self.loadJsonJSONByFilename(jsonPath)                    
             else:
                 xmlPath = os.path.splitext(filePath)[0] + XML_EXT
                 txtPath = os.path.splitext(filePath)[0] + TXT_EXT
+                jsonPath = os.path.splitext(filePath)[0] + JSON_EXT
+
                 if os.path.isfile(xmlPath):
                     self.loadPascalXMLByFilename(xmlPath)
                 elif os.path.isfile(txtPath):
                     self.loadYOLOTXTByFilename(txtPath)
+                elif os.path.isfile(jsonPath):
+                    self.loadJsonJSONByFilename(jsonPath)
 
             self.setWindowTitle(__appname__ + ' ' + filePath)
 
@@ -1431,6 +1456,19 @@ class MainWindow(QMainWindow, WindowMixin):
         print (shapes)
         self.loadLabels(shapes)
         self.canvas.verified = tYoloParseReader.verified
+
+    def loadJsonJSONByFilename(self, jsonPath):
+        if self.filePath is None:
+            return 
+        if os.path.isfile(jsonPath) is False:
+            return 
+
+        self.set_format(FORMAT_JSON)
+        tJsonParseReader = JsonReader(jsonPath)
+        shapes = tJsonParseReader.getShapes()
+
+        self.loadLabels(shapes)
+        self.canvas.verified = tJsonParseReader.verified
 
     def togglePaintLabelsOption(self):
         for shape in self.canvas.shapes:
