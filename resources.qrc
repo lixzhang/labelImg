@@ -18,6 +18,8 @@
 <file alias="edit">resources/icons/edit.png</file>
 <file alias="open">resources/icons/open.png</file>
 <file alias="save">resources/icons/save.png</file>
+<file alias="score">resources/icons/score.png</file>
+<file alias="about">resources/icons/about.png</file>
 <file alias="format_voc">resources/icons/format_voc.png</file>
 <file alias="format_yolo">resources/icons/format_yolo.png</file>
 <file alias="format_json">resources/icons/format_json.png</file>

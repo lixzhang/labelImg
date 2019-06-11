@@ -46,6 +46,7 @@ from libs.ustr import ustr
 from libs.hashableQListWidgetItem import HashableQListWidgetItem
 from libs.json_io import JsonReader
 from libs.json_io import JSON_EXT 
+from libs.AzureAPI import AzureAPI
 
 __appname__ = 'labelImg'
 
@@ -194,6 +195,8 @@ class MainWindow(QMainWindow, WindowMixin):
         self.dockFeatures = QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetFloatable
         self.dock.setFeatures(self.dock.features() ^ self.dockFeatures)
 
+        self.subkey = None 
+
         # Actions
         action = partial(newAction, self)
         quit = action(getStr('quit'), self.close,
@@ -262,6 +265,9 @@ class MainWindow(QMainWindow, WindowMixin):
 
         help = action(getStr('tutorial'), self.showTutorialDialog, None, 'help', getStr('tutorialDetail'))
         showInfo = action(getStr('info'), self.showInfoDialog, None, 'help', getStr('info'))
+
+        score = action(getStr('score'), self.showScoreDialog, None, 'score', getStr('score'))
+        about = action(getStr('about'), self.showAboutDialog, None, 'about', getStr('about'))
 
         zoom = QWidgetAction(self)
         zoom.setDefaultWidget(self.zoomWidget)
@@ -348,6 +354,7 @@ class MainWindow(QMainWindow, WindowMixin):
             file=self.menu('&File'),
             edit=self.menu('&Edit'),
             view=self.menu('&View'),
+            custom=self.menu('&Custom'),            
             help=self.menu('&Help'),
             recentFiles=QMenu('Open &Recent'),
             labelList=labelMenu)
@@ -380,6 +387,8 @@ class MainWindow(QMainWindow, WindowMixin):
             hideAll, showAll, None,
             zoomIn, zoomOut, zoomOrg, None,
             fitWindow, fitWidth))
+
+        addActions(self.menus.custom, (score, about))
 
         self.menus.file.aboutToShow.connect(self.updateFileMenu)
 
@@ -622,6 +631,18 @@ class MainWindow(QMainWindow, WindowMixin):
 
     def showInfoDialog(self):
         msg = u'Name:{0} \nApp Version:{1} \n{2} '.format(__appname__, __version__, sys.version_info)
+        QMessageBox.information(self, u'Information', msg)
+
+    def showScoreDialog(self):
+        azureDialog = AzureAPI(self.subkey)
+        azureDialog.exec_()
+        targetDirPath = azureDialog.imagefolder.text()
+        self.subkey = azureDialog.subscriptionkey.text()
+        self.importDirImages(targetDirPath)
+
+    def showAboutDialog(self):
+        readapi_url = r'https://docs.microsoft.com/en-us/azure/cognitive-services/computer-vision/concept-recognizing-text'
+        msg = u'Custom menu for calling Azure ReadAPI \nMore info about the API can be found at \n{}'.format(readapi_url)
         QMessageBox.information(self, u'Information', msg)
 
     def createShape(self):
