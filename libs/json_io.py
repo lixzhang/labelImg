@@ -10,6 +10,7 @@ from libs.constants import DEFAULT_ENCODING
 
 JSON_EXT = '.json'
 ENCODE_METHOD = DEFAULT_ENCODING
+DEFAULT_TAG = 'tag'
 
 class JSONWriter:
 
@@ -22,9 +23,10 @@ class JSONWriter:
         self.localImgPath = localImgPath
         self.verified = False
 
-    def addBndBox(self, xmin, ymin, xmax, ymax, name, difficult):
+    def addBndBox(self, xmin, ymin, xmax, ymax, name, tag, difficult):
         bndbox = {'xmin': xmin, 'ymin': ymin, 'xmax': xmax, 'ymax': ymax}
         bndbox['name'] = name
+        bndbox['tag'] = tag
         bndbox['difficult'] = difficult
         self.boxlist.append(bndbox)
 
@@ -39,12 +41,14 @@ class JSONWriter:
             ymin = box['ymin']
             ymax = box['ymax']
             boxName = box['name']
+            tag = box['tag']
 
             vertices = [(xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax)]
             text     = boxName
             data = {}
             data['vertices'] = vertices
             data['text'] = text
+            data['tag'] = tag
             result["regions"].append(data)
             
         out_file = None
@@ -76,20 +80,22 @@ class JsonReader:
     def getShapes(self):
         return self.shapes
 
-    def addShape(self, label, xmin, ymin, xmax, ymax, difficult):
+    def addShape(self, label, tag, xmin, ymin, xmax, ymax, difficult):
 
         points = [(xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax)]
-        self.shapes.append((label, points, None, None, difficult))
+        self.shapes.append((label, tag, points, None, None, difficult))
 
     def parseJsonFormat(self):
         with open(self.filepath) as json_f:
             ocr_result = json.load(json_f)        
 
+        # import pdb; pdb.set_trace()
         for region in ocr_result["regions"]:
             xmin = min([x[0] for x in region['vertices']])
             ymin = min([x[1] for x in region['vertices']])
             xmax = max([x[0] for x in region['vertices']])
             ymax = max([x[1] for x in region['vertices']])
             label = region['text'] 
+            tag = region['tag'] if 'tag' in region else DEFAULT_TAG
             # Caveat: difficult flag is discarded when saved as yolo format.
-            self.addShape(label, xmin, ymin, xmax, ymax, False)
+            self.addShape(label, tag, xmin, ymin, xmax, ymax, False)

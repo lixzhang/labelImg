@@ -46,6 +46,7 @@ from libs.ustr import ustr
 from libs.hashableQListWidgetItem import HashableQListWidgetItem
 from libs.json_io import JsonReader
 from libs.json_io import JSON_EXT 
+from libs.json_io import DEFAULT_TAG 
 
 __appname__ = 'labelImg'
 
@@ -88,11 +89,13 @@ class MainWindow(QMainWindow, WindowMixin):
         self.defaultSaveDir = defaultSaveDir
         self.usingPascalVocFormat = True
         self.usingYoloFormat = False
+        self.usingJsonFormat = False
 
         # For loading all image under a directory
         self.mImgList = []
         self.dirname = None
         self.labelHist = []
+        self.tagHist = []
         self.lastOpenDir = None
 
         # Whether we need to save or not.
@@ -108,10 +111,14 @@ class MainWindow(QMainWindow, WindowMixin):
 
         # Main widgets and related state.
         self.labelDialog = LabelDialog(parent=self, listItem=self.labelHist)
+        self.tagDialog = LabelDialog(parent=self, listItem=self.tagHist)
 
         self.itemsToShapes = {}
         self.shapesToItems = {}
+        self.itemsTagsToShapes = {}
+        self.shapesToItemsTags = {}
         self.prevLabelText = ''
+        self.prevTagText = ''
 
         listLayout = QVBoxLayout()
         listLayout.setContentsMargins(0, 0, 0, 0)
@@ -153,6 +160,30 @@ class MainWindow(QMainWindow, WindowMixin):
         self.dock.setObjectName(getStr('labels'))
         self.dock.setWidget(labelListContainer)
 
+        taglistLayout = QVBoxLayout()
+        taglistLayout.setContentsMargins(0, 0, 0, 0)
+
+        # Create a widget for edit button
+        self.editButtonTag = QToolButton()
+        self.editButtonTag.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        # Add some of widgets to gridLayout
+        taglistLayout.addWidget(self.editButtonTag)
+
+         # Create and add a widget for showing current tag items
+        self.tagList = QListWidget()
+        tagListContainer = QWidget()
+        tagListContainer.setLayout(taglistLayout)
+        self.tagList.itemActivated.connect(self.tagSelectionChanged)
+        self.tagList.itemSelectionChanged.connect(self.tagSelectionChanged)
+        self.tagList.itemDoubleClicked.connect(self.editTag)
+        # Connect to itemChanged to detect checkbox changes.
+        self.tagList.itemChanged.connect(self.tagItemChanged)
+        taglistLayout.addWidget(self.tagList)
+
+        self.tagdock = QDockWidget(getStr('boxTagText'), self)
+        self.tagdock.setObjectName(getStr('labels'))
+        self.tagdock.setWidget(tagListContainer)
+
         self.fileListWidget = QListWidget()
         self.fileListWidget.itemDoubleClicked.connect(self.fileitemDoubleClicked)
         filelistLayout = QVBoxLayout()
@@ -188,6 +219,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
         self.setCentralWidget(scroll)
         self.addDockWidget(Qt.RightDockWidgetArea, self.dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.tagdock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.filedock)
         self.filedock.setFeatures(QDockWidget.DockWidgetFloatable)
 
@@ -299,6 +331,11 @@ class MainWindow(QMainWindow, WindowMixin):
                       enabled=False)
         self.editButton.setDefaultAction(edit)
 
+        editTag = action(getStr('editTag'), self.editTag,
+                      'Ctrl+V', 'edit', getStr('editTagDetail'),
+                      enabled=False)
+        self.editButtonTag.setDefaultAction(editTag)
+
         shapeLineColor = action(getStr('shapeLineColor'), self.chshapeLineColor,
                                 icon='color_line', tip=getStr('shapeLineColorDetail'),
                                 enabled=False)
@@ -317,6 +354,14 @@ class MainWindow(QMainWindow, WindowMixin):
         self.labelList.customContextMenuRequested.connect(
             self.popLabelListMenu)
 
+        # Tag list context menu.
+        tagMenu = QMenu()
+        # tagMenu.addAction(editTag)
+        addActions(tagMenu, (editTag, delete))
+        self.tagList.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tagList.customContextMenuRequested.connect(
+            self.popTagListMenu)
+
         # Draw squares/rectangles
         self.drawSquaresOption = QAction('Draw Squares', self)
         self.drawSquaresOption.setShortcut('Ctrl+Shift+R')
@@ -326,7 +371,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
         # Store actions for further handling.
         self.actions = struct(save=save, save_format=save_format, saveAs=saveAs, open=open, close=close, resetAll = resetAll,
-                              lineColor=color1, create=create, delete=delete, edit=edit, copy=copy,
+                              lineColor=color1, create=create, delete=delete, edit=edit, editTag=editTag, copy=copy,
                               createMode=createMode, editMode=editMode, advancedMode=advancedMode,
                               shapeLineColor=shapeLineColor, shapeFillColor=shapeFillColor,
                               zoom=zoom, zoomIn=zoomIn, zoomOut=zoomOut, zoomOrg=zoomOrg,
@@ -335,10 +380,10 @@ class MainWindow(QMainWindow, WindowMixin):
                               fileMenuActions=(
                                   open, opendir, save, saveAs, close, resetAll, quit),
                               beginner=(), advanced=(),
-                              editMenu=(edit, copy, delete,
+                              editMenu=(edit, editTag, copy, delete,
                                         None, color1, self.drawSquaresOption),
-                              beginnerContext=(create, edit, copy, delete),
-                              advancedContext=(createMode, editMode, edit, copy,
+                              beginnerContext=(create, edit, editTag, copy, delete),
+                              advancedContext=(createMode, editMode, edit, editTag, copy,
                                                delete, shapeLineColor, shapeFillColor),
                               onLoadActive=(
                                   close, create, createMode, editMode),
@@ -350,7 +395,8 @@ class MainWindow(QMainWindow, WindowMixin):
             view=self.menu('&View'),
             help=self.menu('&Help'),
             recentFiles=QMenu('Open &Recent'),
-            labelList=labelMenu)
+            labelList=labelMenu,
+            tagList=tagMenu)
 
         # Auto saving : Enable auto saving if pressing next
         self.autoSaving = QAction(getStr('autoSaveMode'), self)
@@ -526,6 +572,7 @@ class MainWindow(QMainWindow, WindowMixin):
         self.canvas.setEditing(True)
         self.populateModeActions()
         self.editButton.setVisible(not value)
+        self.editButtonTag.setVisible(not value)
         if value:
             self.actions.createMode.setEnabled(True)
             self.actions.editMode.setEnabled(False)
@@ -580,7 +627,10 @@ class MainWindow(QMainWindow, WindowMixin):
     def resetState(self):
         self.itemsToShapes.clear()
         self.shapesToItems.clear()
+        self.itemsTagsToShapes.clear()
+        self.shapesToItemsTags.clear()       
         self.labelList.clear()
+        self.tagList.clear()
         self.filePath = None
         self.imageData = None
         self.labelFile = None
@@ -589,6 +639,12 @@ class MainWindow(QMainWindow, WindowMixin):
 
     def currentItem(self):
         items = self.labelList.selectedItems()
+        if items:
+            return items[0]
+        return None
+
+    def currentItemTag(self):
+        items = self.tagList.selectedItems()
         if items:
             return items[0]
         return None
@@ -672,6 +728,9 @@ class MainWindow(QMainWindow, WindowMixin):
     def popLabelListMenu(self, point):
         self.menus.labelList.exec_(self.labelList.mapToGlobal(point))
 
+    def popTagListMenu(self, point):
+        self.menus.tagList.exec_(self.tagList.mapToGlobal(point))
+
     def editLabel(self):
         if not self.canvas.editing():
             return
@@ -679,6 +738,18 @@ class MainWindow(QMainWindow, WindowMixin):
         if not item:
             return
         text = self.labelDialog.popUp(item.text())
+        if text is not None:
+            item.setText(text)
+            item.setBackground(generateColorByText(text))
+            self.setDirty()
+
+    def editTag(self):
+        if not self.canvas.editing():
+            return
+        item = self.currentItemTag()
+        if not item:
+            return
+        text = self.tagDialog.popUp(item.text())
         if text is not None:
             item.setText(text)
             item.setBackground(generateColorByText(text))
@@ -727,11 +798,13 @@ class MainWindow(QMainWindow, WindowMixin):
             shape = self.canvas.selectedShape
             if shape:
                 self.shapesToItems[shape].setSelected(True)
+                self.shapesToItemsTags[shape].setSelected(True)
             else:
                 self.labelList.clearSelection()
         self.actions.delete.setEnabled(selected)
         self.actions.copy.setEnabled(selected)
         self.actions.edit.setEnabled(selected)
+        self.actions.editTag.setEnabled(selected)
         self.actions.shapeLineColor.setEnabled(selected)
         self.actions.shapeFillColor.setEnabled(selected)
 
@@ -747,6 +820,18 @@ class MainWindow(QMainWindow, WindowMixin):
         for action in self.actions.onShapesPresent:
             action.setEnabled(True)
 
+    def addTag(self, shape):
+        shape.paintLabel = self.displayLabelOption.isChecked()
+        item = HashableQListWidgetItem(shape.tag)
+        item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+        item.setCheckState(Qt.Checked)
+        item.setBackground(generateColorByText(shape.tag))
+        self.itemsTagsToShapes[item] = shape
+        self.shapesToItemsTags[shape] = item
+        self.tagList.addItem(item)
+        for action in self.actions.onShapesPresent:
+            action.setEnabled(True)
+
     def remLabel(self, shape):
         if shape is None:
             # print('rm empty label')
@@ -756,10 +841,19 @@ class MainWindow(QMainWindow, WindowMixin):
         del self.shapesToItems[shape]
         del self.itemsToShapes[item]
 
+    def remTag(self, shape):
+        if shape is None:
+            # print('rm empty label')
+            return
+        item = self.shapesToItemsTags[shape]
+        self.tagList.takeItem(self.tagList.row(item))
+        del self.shapesToItemsTags[shape]
+        del self.itemsTagsToShapes[item]
+
     def loadLabels(self, shapes):
         s = []
-        for label, points, line_color, fill_color, difficult in shapes:
-            shape = Shape(label=label)
+        for label, tag, points, line_color, fill_color, difficult in shapes:
+            shape = Shape(label=label, tag=tag)
             for x, y in points:
 
                 # Ensure the labels are within the bounds of the image. If not, fix them.
@@ -783,6 +877,7 @@ class MainWindow(QMainWindow, WindowMixin):
                 shape.fill_color = generateColorByText(label)
 
             self.addLabel(shape)
+            self.addTag(shape)
 
         self.canvas.loadShapes(s)
 
@@ -794,6 +889,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
         def format_shape(s):
             return dict(label=s.label,
+                        tag=s.tag, 
                         line_color=s.line_color.getRgb(),
                         fill_color=s.fill_color.getRgb(),
                         points=[(p.x(), p.y()) for p in s.points],
@@ -801,6 +897,7 @@ class MainWindow(QMainWindow, WindowMixin):
                         difficult = s.difficult)
 
         shapes = [format_shape(shape) for shape in self.canvas.shapes]
+        
         # Can add differrent annotation formats here
         try:
             if self.usingPascalVocFormat is True:
@@ -841,6 +938,15 @@ class MainWindow(QMainWindow, WindowMixin):
             # Add Chris
             self.diffcButton.setChecked(shape.difficult)
 
+    def tagSelectionChanged(self):
+        item = self.currentItemTag()
+        if item and self.canvas.editing():
+            self._noSelectionSlot = True
+            self.canvas.selectShape(self.itemsTagsToShapes[item])
+            shape = self.itemsTagsToShapes[item]
+            # Add Chris
+            self.diffcButton.setChecked(shape.difficult)
+
     def labelItemChanged(self, item):
         shape = self.itemsToShapes[item]
         label = item.text()
@@ -851,12 +957,23 @@ class MainWindow(QMainWindow, WindowMixin):
         else:  # User probably changed item visibility
             self.canvas.setShapeVisible(shape, item.checkState() == Qt.Checked)
 
+    def tagItemChanged(self, item):
+        shape = self.itemsTagsToShapes[item]
+        tag = item.text()
+        if tag != shape.tag:
+            shape.tag = item.text()
+            shape.line_color = generateColorByText(shape.tag)
+            self.setDirty()
+        else:  # User probably changed item visibility
+            self.canvas.setShapeVisible(shape, item.checkState() == Qt.Checked)
+
     # Callback functions:
     def newShape(self):
         """Pop-up and give focus to the label editor.
 
         position MUST be in global coordinates.
         """
+        # import pdb; pdb.set_trace()
         if not self.useDefaultLabelCheckbox.isChecked() or not self.defaultLabelTextLine.text():
             if len(self.labelHist) > 0:
                 self.labelDialog = LabelDialog(
@@ -878,6 +995,8 @@ class MainWindow(QMainWindow, WindowMixin):
             generate_color = generateColorByText(text)
             shape = self.canvas.setLastLabel(text, generate_color, generate_color)
             self.addLabel(shape)
+            shape.tag = DEFAULT_TAG
+            self.addTag(shape)
             if self.beginner():  # Switch to edit mode.
                 self.canvas.setEditing(True)
                 self.actions.create.setEnabled(True)
@@ -979,7 +1098,7 @@ class MainWindow(QMainWindow, WindowMixin):
         self.canvas.setEnabled(False)
         if filePath is None:
             filePath = self.settings.get(SETTING_FILENAME)
-
+        # import pdb; pdb.set_trace()
         # Make sure that filePath is a regular python string, rather than QString
         filePath = ustr(filePath)
 
@@ -1390,7 +1509,12 @@ class MainWindow(QMainWindow, WindowMixin):
             self.setDirty()
 
     def deleteSelectedShape(self):
-        self.remLabel(self.canvas.deleteSelected())
+        # self.remLabel(self.canvas.deleteSelected())
+        # self.remTag(self.canvas.deleteSelected())
+        shape = self.canvas.deleteSelected()
+        self.remLabel(shape)
+        self.remTag(shape)
+
         self.setDirty()
         if self.noShapes():
             for action in self.actions.onShapesPresent:
@@ -1415,6 +1539,7 @@ class MainWindow(QMainWindow, WindowMixin):
     def copyShape(self):
         self.canvas.endMove(copy=True)
         self.addLabel(self.canvas.selectedShape)
+        self.addTag(self.canvas.selectedShape)
         self.setDirty()
 
     def moveShape(self):
@@ -1466,7 +1591,6 @@ class MainWindow(QMainWindow, WindowMixin):
         self.set_format(FORMAT_JSON)
         tJsonParseReader = JsonReader(jsonPath)
         shapes = tJsonParseReader.getShapes()
-
         self.loadLabels(shapes)
         self.canvas.verified = tJsonParseReader.verified
 

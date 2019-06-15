@@ -38,8 +38,9 @@ class Shape(object):
     point_size = 8
     scale = 1.0
 
-    def __init__(self, label=None, line_color=None, difficult=False, paintLabel=False):
+    def __init__(self, label=None, tag=None, line_color=None, difficult=False, paintLabel=False):
         self.label = label
+        self.tag = tag
         self.points = []
         self.fill = False
         self.selected = False
